@@ -56,6 +56,12 @@ async def root():
             "POST /classify": "单条事件根因分类（body: {\"incident\": {...}}）",
             "POST /eval": "数据集评测",
             "GET /stats": "数据集统计",
+            "POST /assist": "值班助手问答（body: {\"question\": \"...\"}）",
+            "GET /kb/stats": "知识库统计",
+        },
+        "pages": {
+            "playground": "/playground",
+            "assistant": "/assistant",
         },
     }
 
@@ -107,6 +113,190 @@ async function run(){
     const d = await resp.json();
     r.textContent = JSON.stringify(d, null, 2);
   } catch(e){ r.textContent = '请求失败: ' + e; }
+}
+</script>
+</body>
+</html>"""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(html)
+
+
+@app.get("/assistant")
+async def assistant_page():
+    """值班助手可视化页面：聊天式问答 + 相似工单展示"""
+    html = """<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSRM 值班助手</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", sans-serif; margin:0; background:#f0f2f5; color:#222; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 20px 16px 40px; }
+  header { background: linear-gradient(135deg,#1a73e8,#4285f4); color:#fff; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+  header h1 { margin:0; font-size: 20px; }
+  header p { margin: 4px 0 0; font-size: 13px; opacity:.9; }
+  .badge { background: rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.4); border-radius: 999px; padding: 3px 12px; font-size:12px; }
+  .presets { display:flex; flex-wrap:wrap; gap:8px; margin-bottom: 14px; }
+  .presets button { background:#fff; border:1px solid #d0d7de; border-radius: 8px; padding: 8px 14px; font-size:13px; cursor:pointer; color:#333; }
+  .presets button:hover { border-color:#1a73e8; color:#1a73e8; }
+  .chat { display:flex; flex-direction:column; gap:12px; }
+  .msg { display:flex; gap:10px; }
+  .msg .avatar { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0; }
+  .msg.user { flex-direction: row-reverse; }
+  .msg.user .avatar { background:#1a73e8; }
+  .msg.bot .avatar { background:#dfe3e8; }
+  .bubble { max-width: 78%; border-radius: 12px; padding: 12px 16px; font-size: 14px; line-height: 1.65; }
+  .msg.user .bubble { background:#1a73e8; color:#fff; border-top-right-radius: 4px; }
+  .msg.bot .bubble { background:#fff; border:1px solid #e2e6ea; border-top-left-radius: 4px; }
+  .meta { display:flex; flex-wrap:wrap; gap:6px; margin: 8px 0 10px; }
+  .tag { font-size:11.5px; border-radius:999px; padding:2px 10px; border:1px solid; }
+  .tag.mode { color:#0b7285; border-color:#0b7285; background:#e7f5f7; }
+  .tag.provider { color:#5f3dc4; border-color:#5f3dc4; background:#f3f0ff; }
+  .tag.conf-high { color:#2b8a3e; border-color:#2b8a3e; background:#ebfbee; }
+  .tag.conf-mid { color:#e8590c; border-color:#e8590c; background:#fff4e6; }
+  .tag.conf-low { color:#c92a2a; border-color:#c92a2a; background:#fff5f5; }
+  .advice { background:#f8f9fa; border-left:3px solid #1a73e8; padding:8px 12px; border-radius:0 6px 6px 0; margin:8px 0; white-space:pre-wrap; }
+  .h2 { font-size:13px; color:#666; margin:14px 0 6px; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td { text-align:left; padding:6px 8px; border-bottom:1px solid #eee; }
+  th { color:#888; font-weight:500; }
+  .score { font-variant-numeric: tabular-nums; color:#1a73e8; font-weight:600; }
+  .rawcases { font-size:12.5px; color:#555; }
+  .rawcases li { margin: 4px 0; }
+  .empty { color:#999; font-size:13px; }
+  .inputbar { display:flex; gap:10px; margin-top:16px; position:sticky; bottom:0; }
+  .inputbar input { flex:1; border:1px solid #d0d7de; border-radius:10px; padding: 12px 14px; font-size:14px; outline:none; background:#fff; }
+  .inputbar input:focus { border-color:#1a73e8; }
+  .inputbar button { background:#1a73e8; color:#fff; border:none; border-radius:10px; padding: 0 22px; font-size:14px; cursor:pointer; }
+  .inputbar button:disabled { opacity:.6; cursor:not-allowed; }
+  .typing { color:#999; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>🛎️ SSRM 值班助手</h1>
+      <p>描述你遇到的问题，我会检索相似的历史工单并给出处置建议</p>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <span class="badge" id="modeBadge">模式加载中…</span>
+      <a class="badge" href="/playground" style="text-decoration:none;color:#fff">→ 根因分类</a>
+    </div>
+  </header>
+
+  <div class="presets">
+    <button onclick="askPreset('审批已经通过了，但 SSRM 里一直没生成注册任务，等了一个小时了')">审批通过但没生成任务</button>
+    <button onclick="askPreset('调用 EA 的 updateSupplier 接口一直超时，重试了 4 次还是失败')">EA 同步一直失败</button>
+    <button onclick="askPreset('供应商说提交注册时报错申请已存在，怀疑是重复提交')">怀疑重复提交</button>
+    <button onclick="askPreset('在 Dora 上查不到这个供应商的联系人信息')">Dora 查不到联系人</button>
+  </div>
+
+  <div class="chat" id="chat">
+    <div class="msg bot">
+      <div class="avatar">🤖</div>
+      <div class="bubble">你好！我是 SSRM 值班助手。遇到线上问题可以直接描述（例如「审批通过但没生成任务」），我会帮你：<br>1️⃣ 检索最相似的历史工单<br>2️⃣ 结合 LLM 给出处置建议<br><span class="empty">也可以点上方预设问题快速体验。</span></div>
+    </div>
+  </div>
+
+  <div class="inputbar">
+    <input id="q" placeholder="输入你的问题，回车发送…" onkeydown="if(event.key==='Enter')send()">
+    <button id="sendBtn" onclick="send()">发送</button>
+  </div>
+</div>
+
+<script>
+const chat = document.getElementById('chat');
+const input = document.getElementById('q');
+const sendBtn = document.getElementById('sendBtn');
+
+fetch('/kb/stats').then(r=>r.json()).then(d=>{
+  const b = document.getElementById('modeBadge');
+  const modeName = d.mode === 'vector' ? '向量检索' : (d.mode === 'keyword+rerank' ? '关键词+LLM重排' : d.mode);
+  b.textContent = `📚 知识库 ${d.tickets} 条 | ${modeName}`;
+}).catch(()=>{});
+
+function esc(s){ const d=document.createElement('div'); d.textContent = s==null?'':String(s); return d.innerHTML; }
+
+function addUser(text){
+  const div = document.createElement('div');
+  div.className = 'msg user';
+  div.innerHTML = `<div class="avatar">🧑‍💻</div><div class="bubble">${esc(text)}</div>`;
+  chat.appendChild(div);
+}
+function addBotHTML(html){
+  const div = document.createElement('div');
+  div.className = 'msg bot';
+  div.innerHTML = `<div class="avatar">🤖</div><div class="bubble">${html}</div>`;
+  chat.appendChild(div);
+  return div;
+}
+function confTag(c){
+  if (c == null) return '';
+  const cls = c >= 0.85 ? 'conf-high' : (c >= 0.7 ? 'conf-mid' : 'conf-low');
+  return `<span class="tag ${cls}">置信度 ${(c*100).toFixed(0)}%</span>`;
+}
+function lowConfHint(c){
+  if (c == null || c >= 0.55) return '';
+  return '<div class="empty">⚠️ 相似度低于采信阈值(0.55)，以上建议仅供参考，请人工判断。</div>';
+}
+
+async function askPreset(q){ input.value = q; send(); }
+
+async function send(){
+  const q = input.value.trim();
+  if (!q || sendBtn.disabled) return;
+  input.value = '';
+  sendBtn.disabled = true;
+  addUser(q);
+  const t = addBotHTML('<span class="typing">正在检索历史工单并生成建议…（约 5~10 秒）</span>');
+  try {
+    const resp = await fetch('/assist', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({question: q})});
+    const d = await resp.json();
+    render(t, d);
+  } catch(e){
+    t.innerHTML = `<span style="color:#c92a2a">请求失败：${esc(e.message || e)}</span>`;
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+function render(t, d){
+  if (d.error){ t.innerHTML = `<span style="color:#c92a2a">${esc(d.error)}</span>`; return; }
+
+  // /assist 返回：answer(字符串) / confidence(顶层) / mode / llm_provider / sources / cases(降级)
+  const meta = [
+    `<span class="tag mode">模式: ${esc(d.mode || '-')}</span>`,
+    d.llm_provider ? `<span class="tag provider">LLM: ${esc(d.llm_provider)}</span>` : '',
+    confTag(d.confidence)
+  ].join('');
+
+  const answerText = typeof d.answer === 'string' ? d.answer : (d.answer && (d.answer.suggested_action || d.answer.summary)) || '（无建议）';
+  const advice = `<div class="h2">💡 处置建议</div><div style="white-space:pre-wrap">${esc(answerText)}</div>` + lowConfHint(d.confidence);
+
+  let cases = '';
+  if (d.cases && d.cases.length){
+    // LLM 降级模式：返回完整 case（含症状与处置过程）
+    cases = `<div class="h2">📋 相似历史工单（降级返回原始 case）</div>` + d.cases.map(c =>
+      `<div style="background:#f8f9fa;border-radius:8px;padding:10px 12px;margin:6px 0;font-size:13px">` +
+      `<b>${esc(c.ticket_id)}</b> · ${esc(c.title)}<br>` +
+      `<span style="color:#666">现象：</span>${esc(c.symptom)}<br>` +
+      `<span style="color:#666">处置：</span>${esc(c.resolution)}</div>`).join('');
+  } else if (d.sources && d.sources.length){
+    const hasDetail = !!d.sources[0].title;
+    cases = `<div class="h2">📋 相似历史工单（Top ${d.sources.length}）</div><table><tr><th>工单</th>` +
+      (hasDetail ? '<th>标题</th><th>根因类别</th>' : '') + '<th>相似度</th></tr>' +
+      d.sources.map(s=>`<tr><td>${esc(s.ticket_id)}</td>` +
+        (hasDetail ? `<td>${esc(s.title)}</td><td>${esc(s.root_cause_class)}</td>` : '') +
+        `<td class="score">${((s.score||0)*100).toFixed(0)}%</td></tr>`).join('') +
+      `</table>`;
+  } else {
+    cases = '<div class="empty">（未检索到相似工单）</div>';
+  }
+
+  t.innerHTML = meta + advice + cases;
 }
 </script>
 </body>
