@@ -1,4 +1,4 @@
-"""SSRM Ops Agent — FastAPI 服务（端口 8001，与主仓库短链 demo 的 8000 完全隔离）
+"""SSRM Ops Agent — FastAPI 服务（端口 8001）
 
 端点：
 - GET  /health          健康检查（含 LLM 配置状态）

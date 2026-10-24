@@ -1,8 +1,6 @@
 """SSRM AIOps 全局配置
 
-与 multi-agent-aiops 主仓库完全独立：
-- 独立端口 8001（主仓库 demo 是短链场景，跑在 8000）
-- 多 LLM Provider 容灾链：primary(deepseek/任意兼容) → zhipu(免费 glm-4-flash) → siliconflow(免费 Qwen) → 规则基线
+多 LLM Provider 容灾链：primary(deepseek/任意兼容) → zhipu(免费 glm-4-flash) → siliconflow(免费 Qwen) → 规则基线
 """
 
 from pydantic_settings import BaseSettings
