@@ -17,17 +17,21 @@ from pydantic import BaseModel
 from app.classifier import ROOT_CAUSE_CLASSES, RootCauseClassifier
 from app.dataset import load_dataset, stats
 from app.llm_client import llm_client
+from app.rag_assistant import RagAssistant
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 classifier = RootCauseClassifier(llm_client)
+rag = RagAssistant(llm_client)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     providers = ",".join(llm_client.configured_providers) if llm_client.is_configured else "未配置(规则基线降级)"
     logger.info("SSRM Ops Agent started | LLM 容灾链: %s", providers)
+    await rag.warmup()
+    logger.info("RAG 值班助手就绪 | 模式: %s", rag.mode)
     yield
 
 
@@ -171,3 +175,20 @@ async def eval_endpoint(req: EvalRequest):
 @app.get("/stats")
 async def dataset_stats():
     return stats()
+
+
+class AssistRequest(BaseModel):
+    question: str
+
+
+@app.post("/assist")
+async def assist(req: AssistRequest):
+    """值班助手：描述你遇到的问题，返回相似历史工单和处置建议"""
+    return await rag.assist(req.question)
+
+
+@app.get("/kb/stats")
+async def kb_stats():
+    from collections import Counter
+    c = Counter(d["root_cause_class"] for d in rag.docs)
+    return {"tickets": len(rag.docs), "by_class": dict(c), "mode": rag.mode, "ready": rag.ready}

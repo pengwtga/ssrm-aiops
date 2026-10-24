@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 30
     llm_max_retries: int = 1  # 单 Provider 内重试次数（跨 Provider 容灾由链路负责）
 
+    # RAG 值班助手
+    embedding_model: str = "embedding-2"  # 智谱向量化模型
+    rag_top_k: int = 3
+    rag_min_score: float = 0.55  # 相似度低于此值的检索结果不采信
+
     # 分类 Agent
     min_confidence_for_auto_action: float = 0.85  # 置信度低于此值 → 建议人工确认
 
