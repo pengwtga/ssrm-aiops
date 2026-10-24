@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # 服务
     api_port: int = 8001
 
+    # 公网防护：/eval 一次请求会循环调用 LLM 30 次，需要 token 防刷（留空则 /eval 直接拒绝）
+    eval_token: str = ""
+
     model_config = {"env_prefix": "SSRM_AIOPS_", "env_file": ".env"}
 
 

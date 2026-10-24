@@ -14,11 +14,12 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app.classifier import ROOT_CAUSE_CLASSES, RootCauseClassifier
+from app.config import settings
 from app.dataset import load_dataset, stats
 from app.llm_client import llm_client
 from app.rag_assistant import RagAssistant
@@ -40,6 +41,23 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="SSRM Ops Agent", version="0.1.0", lifespan=lifespan)
+
+
+# ── 公网防护：服务会消耗 LLM API 配额，加最小成本的防刷措施 ──
+RATE_LIMIT_PER_MIN = 20  # 单 IP 每分钟上限（classify/assist）
+_rate_bucket: dict[str, list[float]] = {}
+
+
+def _check_rate(ip: str) -> None:
+    """内存滑动窗口限速（单实例部署够用；多实例需换 Redis）"""
+    import time as _t
+    now = _t.monotonic()
+    window = [t for t in _rate_bucket.get(ip, []) if now - t < 60]
+    if len(window) >= RATE_LIMIT_PER_MIN:
+        _rate_bucket[ip] = window
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+    window.append(now)
+    _rate_bucket[ip] = window
 
 
 # ════════════════════════════════════════════════════════════════
@@ -256,6 +274,9 @@ function render(d){
     ${review}
     <details><summary>查看原始 JSON</summary><pre>${esc(JSON.stringify(d,null,2))}</pre></details>`;
 }
+
+// ?demo=1 自动跑一个预设案例（README 截图 / 面试演示用）
+if (new URLSearchParams(location.search).has('demo')){ fill('callback'); run(); }
 """
     return HTMLResponse(page_shell(
         "🔍 根因分类",
@@ -375,6 +396,9 @@ function render(t, d){
 
   t.innerHTML = html;
 }
+
+// ?demo=1 自动跑一个预设问题（README 截图 / 面试演示用）
+if (new URLSearchParams(location.search).has('demo')) askPreset('审批已经通过了，但 SSRM 里一直没生成注册任务，等了一个小时了');
 """
     return HTMLResponse(page_shell(
         "🛎️ SSRM 值班助手",
@@ -393,14 +417,23 @@ async def health():
 
 
 @app.post("/classify")
-async def classify(req: ClassifyRequest):
+async def classify(req: ClassifyRequest, request: Request):
+    _check_rate(request.client.host)
     result = await classifier.classify(req.incident)
     return result
 
 
 @app.post("/eval")
-async def eval_endpoint(req: EvalRequest):
-    """数据集评测：逐条分类并与标注对比，输出总体准确率、分类别准确率、混淆对。"""
+async def eval_endpoint(req: EvalRequest, request: Request):
+    """数据集评测：逐条分类并与标注对比，输出总体准确率、分类别准确率、混淆对。
+
+    防刷：一次评测会循环调用 LLM 上限条数次，公网环境要求 token
+    （用法：POST /eval?token=... 或请求头 X-Eval-Token；token 配置于 .env 的 SSRM_AIOPS_EVAL_TOKEN）。
+    """
+    token = request.query_params.get("token") or request.headers.get("x-eval-token")
+    if not settings.eval_token or token != settings.eval_token:
+        raise HTTPException(status_code=403, detail="评测接口需要有效 token（防公网刷量消耗 LLM 配额）")
+    _check_rate(request.client.host)
     rows = load_dataset(limit=req.limit, shuffle=True)
     correct = 0
     per_class: dict[str, dict[str, int]] = {}
@@ -449,8 +482,9 @@ class AssistRequest(BaseModel):
 
 
 @app.post("/assist")
-async def assist(req: AssistRequest):
+async def assist(req: AssistRequest, request: Request):
     """值班助手：描述你遇到的问题，返回相似历史工单和处置建议"""
+    _check_rate(request.client.host)
     return await rag.assist(req.question)
 
 
