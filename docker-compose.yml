@@ -1,0 +1,46 @@
+# SSRM Ops Agent — 一键起服务
+#
+#   docker compose up -d --build      启动（含构建）
+#   docker compose ps                 看两个服务健康状态
+#   docker compose logs -f api        跟后端日志
+#   docker compose down               停止
+#
+# 访问：http://localhost:8080 （前端 React）/ http://localhost:8001/docs （后端 Swagger）
+
+services:
+  api:
+    build:
+      context: .
+    image: ssrm-aiops-api:latest
+    container_name: ssrm-aiops-api
+    # LLM 密钥从 .env 注入，绝不打进镜像
+    env_file:
+      - .env
+    environment:
+      # .env 里的端口配置统一收口到这里，避免容器内外端口不一致
+      SSRM_AIOPS_API_PORT: "8001"
+    volumes:
+      # 数据集和向量缓存落宿主机：重启不丢，改 jsonl 不用重建镜像
+      - ./data:/app/data
+    expose:
+      - "8001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+    image: ssrm-aiops-web:latest
+    container_name: ssrm-aiops-web
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        # 等后端 /health 通过再起前端，避免首屏 502
+        condition: service_healthy
+    restart: unless-stopped

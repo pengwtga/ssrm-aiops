@@ -1,0 +1,20 @@
+# 构建上下文瘦身 + 防止密钥/本地环境被打进镜像
+.git
+.gitignore
+.idea
+.venv
+__pycache__
+*.pyc
+*.log
+
+# 机密：绝不进镜像，运行时通过 env_file / 环境变量注入
+.env
+.env.local
+
+# 前端独立构建（有自己的 Dockerfile 与上下文）
+frontend
+
+# 文档与截图不参与运行时
+docs/*.png
+docs/*.svg
+README.md
