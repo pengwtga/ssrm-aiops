@@ -8,9 +8,14 @@ __pycache__/
 
 # 运行产物
 *.log
+data/kb_vectors.json
+
+# 前端
+frontend/node_modules/
+frontend/dist/
 
 # IDE
 .idea/
 
-# IDE
-.idea/
+# Vite 临时产物
+frontend/vite.config.js.timestamp-*
