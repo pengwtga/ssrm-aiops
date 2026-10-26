@@ -57,19 +57,30 @@
 
 ## 快速开始
 
+**方式一：Docker 一键起（推荐）**
+
 ```bash
-# 1. 环境（复用 aiops venv）
-pip install -r requirements.txt
+cp .env.example .env      # 填入任一 Provider 的 Key（不配置则自动走规则基线）
+docker compose up -d --build
 
-# 2. 配置 LLM（不配置则自动走规则基线）
-cp .env.example .env   # 填入 DeepSeek API Key
-
-# 3. 启动
-python -m uvicorn app.main:app --port 8001
-
-# 4. 评测
-python -m app.eval 30
+# 前端（React）：http://localhost:8080
+# 后端（Swagger）：http://localhost:8001/docs
 ```
+
+`api`（FastAPI）+ `web`（React/nginx）两个服务，`web` 等 `api` 健康检查通过后才启动，避免首屏 502。
+
+**方式二：本地开发**
+
+```bash
+pip install -r requirements.txt
+python -m uvicorn app.main:app --port 8001        # 后端 8001
+
+cd frontend && npm install && npm run dev          # 前端 5173（/api 自动代理到 8001）
+
+python -m app.eval 30                              # 命令行评测
+```
+
+> 容器化与前端改造的完整步骤、踩坑记录、以及每一步的验收标准见 [docs/PORTING.md](docs/PORTING.md)。
 
 ## 数据集
 
@@ -87,11 +98,20 @@ ssrm-aiops/
 │   ├── config.py      # pydantic-settings 配置（SSRM_AIOPS_ 前缀）
 │   ├── llm_client.py  # OpenAI 兼容客户端（超时/重试/JSON 模式）
 │   ├── classifier.py  # 根因分类 Agent（LLM + 规则基线双通道）
+│   ├── rag_assistant.py # RAG 值班助手（向量检索 + 降级链路）
+│   ├── vector_store.py  # 向量存储（接口对齐向量库，可无缝替换）
 │   ├── dataset.py     # 数据集加载
 │   ├── eval.py        # 命令行评测
 │   └── main.py        # FastAPI（8001）
+├── frontend/          # React 前端（Vite + react-router）
+│   ├── src/pages/     # Playground（根因分类）/ Assistant（值班助手）
+│   ├── src/api.js     # 统一请求层，错误归一化
+│   ├── Dockerfile     # 多阶段构建 → nginx 托管
+│   └── nginx.conf     # /api 反代 + SPA 路由回退 + gzip
+├── Dockerfile         # 后端镜像（非 root、HEALTHCHECK、分层缓存）
+├── docker-compose.yml # api + web 一键起
 ├── data/incidents.jsonl
-├── docs/               # 架构图 + 页面截图
+├── docs/               # 架构图 + 页面截图 + PORTING.md（改造手册）
 ├── scripts/gen_dataset.py
 ├── .env.example
 └── requirements.txt
