@@ -17,7 +17,11 @@
 | `data_inconsistency` | 多下游部分成功的数据缺口 | 对账补推 |
 | `frontend_param_error` | 前端/参数错误 | 拒绝并反馈字段问题 |
 
-## 架构要点（面试可讲）
+## 架构
+
+![架构图](docs/architecture.svg)
+
+## 架构要点
 
 1. **多 LLM Provider 容灾链**：`primary(DeepSeek) → zhipu(glm-4-flash 永久免费) → siliconflow(免费 Qwen) → 规则基线`，逐个尝试自动切换；`/health` 暴露当前链路，响应里的 `source` / `llm_provider` 字段可观测实际生效通道
 2. **JSON 模式兼容性处理**：部分模型（如 glm-4-flash）不支持 `response_format=json_object`，遇 400 自动降级为宽松 JSON 提取（剥 markdown 围栏 / 平衡花括号截取）
@@ -87,6 +91,7 @@ ssrm-aiops/
 │   ├── eval.py        # 命令行评测
 │   └── main.py        # FastAPI（8001）
 ├── data/incidents.jsonl
+├── docs/               # 架构图 + 页面截图
 ├── scripts/gen_dataset.py
 ├── .env.example
 └── requirements.txt
