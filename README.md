@@ -63,8 +63,8 @@
 cp .env.example .env      # 填入任一 Provider 的 Key（不配置则自动走规则基线）
 docker compose up -d --build
 
-# 前端（React）：http://localhost:8080
-# 后端（Swagger）：http://localhost:8001/docs
+# 前端（React）：http://localhost:8001
+# 后端（Swagger）：http://127.0.0.1:8002/docs   仅本机可访问
 ```
 
 `api`（FastAPI）+ `web`（React/nginx）两个服务，`web` 等 `api` 健康检查通过后才启动，避免首屏 502。

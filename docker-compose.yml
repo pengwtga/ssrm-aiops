@@ -5,7 +5,8 @@
 #   docker compose logs -f api        跟后端日志
 #   docker compose down               停止
 #
-# 访问：http://localhost:8080 （前端 React）/ http://localhost:8001/docs （后端 Swagger）
+# 访问：http://localhost:8001          （前端 React，对外唯一入口）
+#       http://127.0.0.1:8002/docs     （后端 Swagger，只绑本机，公网不暴露）
 
 services:
   api:
@@ -22,8 +23,11 @@ services:
     volumes:
       # 数据集和向量缓存落宿主机：重启不丢，改 jsonl 不用重建镜像
       - ./data:/app/data
-    expose:
-      - "8001"
+    # 对外只暴露前端 8001（沿用容器化之前的端口，README 里的链接不用改）。
+    # 后端 8001 走容器内网给 nginx 用，另外映射一个 127.0.0.1:8002 供本地看 Swagger——
+    # 绑 127.0.0.1 而不是 0.0.0.0，公网扫不到 /docs，少一个暴露面。
+    ports:
+      - "127.0.0.1:8002:8001"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/health"]
       interval: 30s
@@ -38,7 +42,7 @@ services:
     image: ssrm-aiops-web:latest
     container_name: ssrm-aiops-web
     ports:
-      - "8080:80"
+      - "8001:80"
     depends_on:
       api:
         # 等后端 /health 通过再起前端，避免首屏 502

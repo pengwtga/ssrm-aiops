@@ -55,10 +55,10 @@ docker compose logs -f api            # 看到 "RAG 值班助手就绪 | 模式:
 
 打开浏览器逐项过：
 
-- [x] `http://localhost:8080` 打开是根因分类页
+- [x] `http://localhost:8001` 打开是根因分类页
 - [x] 点「案例：审批通过但没生成任务」→ 点「开始分类」→ 5~10 秒后出根因 + 置信度 + 依据
 - [x] 顶部切到「值班助手」→ 点第一个案例 → 出处置建议 + 相似工单 Top3
-- [x] `http://localhost:8001/docs` 后端 Swagger 可访问（容器网络正常）
+- [x] `http://127.0.0.1:8002/docs` 后端 Swagger 可访问（容器网络正常）
 - [ ] `docker compose restart api` 后，知识库条数不变（说明 `./data` 挂载生效，向量缓存没丢）
 - [x] `docker compose down` 再 `up -d`，配置不丢（说明 `.env` 注入正确、不依赖镜像内文件）
 
@@ -80,10 +80,17 @@ scp .env root@124.222.174.133:/opt/ssrm-aiops/.env
 ssh root@124.222.174.133
 cd /opt/ssrm-aiops
 chown -R 10001:10001 data      # 容器内是非 root 用户，Linux 上必须放权，否则写不了向量缓存
+
+# 关键：旧的 systemd 服务还占着 8001，不停掉 compose 会报 "address already in use"
+systemctl stop ssrm-aiops && systemctl disable ssrm-aiops
+
 docker compose up -d --build
 ```
 
-**验收**：`http://124.222.174.133:8080` 能打开，且 `curl http://127.0.0.1:8001/health` 返回 `llm_configured: true`。
+**验收**：`http://124.222.174.133:8001` 能打开（端口和容器化之前一致，README 里的在线体验链接不用改），且 `curl http://127.0.0.1:8001/api/health` 返回 `llm_configured: true`。
+
+> 端口规划说明：对外只开 **8001**（nginx），后端 8001 走容器内网；另映射 `127.0.0.1:8002` 给 Swagger 本地查看，绑 127.0.0.1 所以公网扫不到 `/docs`。保留 8001 的原因：README 在线链接、防火墙规则、肌肉记忆都不用改——**改造类项目不该顺手改掉对外契约**。
+
 
 > 踩坑记录（面试可以讲）：宿主机 bind mount 到容器时，容器内 uid=10001 的用户对宿主目录没有写权限，RAG 启动写 `kb_vectors.json` 会 EACCES，表现是服务能起但 `/kb/stats` 一直是 `ready: false`。解法是 `chown 10001`。这个坑在 macOS 上不会出现（Docker Desktop 的 osxfs 会做 uid 映射），只在 Linux 服务器上暴露——这类「本地能跑、上线就炸」的问题，正是容器化需要真实部署一遍才能踩到的。
 
